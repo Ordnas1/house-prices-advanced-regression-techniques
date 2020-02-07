@@ -27,9 +27,10 @@ sumNA <- function(df) {
 
 ## Data--------------
 
-train <- read_csv("train.csv")
-test <- read_csv("test.csv") 
+train <- read_csv("data/train.csv")
+test <- read_csv("data/test.csv") 
 
+## Imputacion --------------
 ## Fullset para imputación y feature engineering
 test$SalePrice = NA
 full <- rbind(train,test)
@@ -93,5 +94,5 @@ sumNA(full_imp)
 train_imp <- full_imp %>% filter(!is.na(SalePrice))
 test_imp <- full_imp %>% filter(is.na(SalePrice))
 
-write_csv(train_imp, "train_imp.csv")
-write_csv(test_imp, "test_imp.csv")
+write_csv(train_imp, "imputados/train_imp.csv")
+write_csv(test_imp, "imputados/test_imp.csv")
