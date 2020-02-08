@@ -9,7 +9,7 @@ library(mice)
 library(foreach)
 library(doMC)
 library(MLmetrics)
-
+library(doSNOW)
 set.seed(2345)
 
 ## functions-------
@@ -71,7 +71,8 @@ testRMSLES <- function(dataTest, model) {
 
 ## Parallel-------------------------------
 ## Nota: Modelos basados en RWeka no funcionan con esta opción 
-registerDoMC(cores = 8)
+#cl <- snow::makeCluster(4, type = "SOCK")
+#registerDoSNOW(cl)
 
 ## Data--------------
 
@@ -142,4 +143,179 @@ model_m5 <- train(SalePrice ~ ., data = train[-1],
 
 model_m5
 testRMSLES(test, model_m5)
+
+
+## GBM  0.1518
+
+
+
+gbmGrid <- expand.grid(.interaction.depth = seq(1, 7, by = 2),
+                       .n.trees = seq(100, 1000, by = 50),
+                       .shrinkage = c(0.01, 0.1),
+                       .n.minobsinnode = c(10, 20) )
+
+model_gbm <- train(SalePrice ~ ., data = train[-1],
+                   metric = "RMSLE",
+                   maximize = F,
+                   method = "gbm",
+                   tuneGrid = gbmGrid,
+                   trControl = ctrl)
+model_gbm
+testRMSLES(test, model_gbm)
+
+
+##XGBoost
+
+data_dummy <- dummyVars(SalePrice ~ . , data = data)
+data_dummy_pred <- predict(data_dummy, data)
+data_dummy_pred <- cbind(as.data.frame(data_dummy_pred)[-1],data$SalePrice)
+names(data_dummy_pred)[304] <- "SalePrice"
+names(data_dummy_pred) <- gsub("\\(", "", names(data_dummy_pred))
+names(data_dummy_pred) <- gsub("\\)", "", names(data_dummy_pred))
+rownames(data_dummy_pred) <- NULL
+
+train_dummy <- data_dummy_pred[trainIndex,]
+test_dummy <- data_dummy_pred[-trainIndex,]  
+
+# grid1
+xgb_grid1 <- expand_grid(
+  .nrounds = c(100,101),
+  .max_depth = 6,
+  .eta = 0.3,
+  .gamma = 0,
+  .colsample_bytree = 1,
+  .min_child_weight = 1,
+  .subsample = 1
+)
+## tuneLength = 3, 0.16878
+
+start_time <- Sys.time()
+model_xgb1 <- train(SalePrice ~ . , data = train_dummy,
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "xgbTree",
+                    tuneLength = 1,
+                    trControl = ctrl)
+end_time <- Sys.time()
+end_time - start_time
+model_xgb1
+testRMSLES(test_dummy, model_xgb1)
+
+## Tuneado( 0.16290)
+nrounds_max <- 1000
+
+xgb_grid2 <- data.frame(expand_grid(
+  .nrounds = seq(200, nrounds_max, by = 50),
+  .max_depth = c(2, 3, 4, 5, 6),
+  .eta = c(0.025, 0.05, 0.1, 0.3),
+  .gamma = 0,
+  .colsample_bytree = 1,
+  .min_child_weight = 1,
+  .subsample = 1
+))
+
+model_xgb2 <- train(SalePrice ~ . , data = train_dummy,
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "xgbTree",
+                    tuneGrid = xgb_grid2,
+                    trControl = ctrl)
+model_xgb2
+
+testRMSLES(test_dummy, model_xgb2)
+
+## Funcion para graficar el perfil del tuneo. De parte de Jani@Kaggle
+
+model_xgb2$bestTune # eta 0.05 max_depth 2
+
+##Tuneo 3 1.629021
+xgb_grid3 <- data.frame(expand.grid(
+  .nrounds = seq(200, nrounds_max, by = 50),
+  .max_depth = ifelse(model_xgb2$bestTune$max_depth == 2,                                   ## Javi@ kaggle max depth 2 a 4, o +- 1
+                      c(model_xgb2$bestTune$max_depth:4),
+                      model_xgb2$bestTune$max_depth - 1:xgb_tune$bestTune$max_depth + 1),
+  .eta = model_xgb2$bestTune$eta,
+  .gamma = 0,
+  .colsample_bytree = 1,
+  .min_child_weight = c(1,2,3),
+  .subsample = 1
+))
+
+model_xgb3 <- train(SalePrice ~ . , data = train_dummy,
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "xgbTree",
+                    tuneGrid = xgb_grid3,
+                    trControl = ctrl)
+
+model_xgb3
+testRMSLES(test_dummy,model_xgb3)
+
+## Tuneo 4 (0.15896)
+
+xgb_grid4 <- data.frame(expand.grid(
+  .nrounds = seq(200, nrounds_max, by = 50),
+  .max_depth = model_xgb3$bestTune$max_depth,
+  .eta = model_xgb2$bestTune$eta,
+  .gamma = 0,
+  .colsample_bytree = c(0.4, 0.6, 0.8, 1.0),
+  .min_child_weight = model_xgb3$bestTune$min_child_weight,
+  .subsample = c(0.5, 0.75, 1.0)
+))
+
+model_xgb4 <- train(SalePrice ~ . , data = train_dummy,
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "xgbTree",
+                    tuneGrid = xgb_grid4,
+                    trControl = ctrl)
+
+model_xgb4
+testRMSLES(test_dummy,model_xgb4)
+
+
+## Tuneo 5 0.1594537
+
+xgb_grid5 <- data.frame(expand.grid(
+  .nrounds = seq(200, nrounds_max, by = 50),
+  .max_depth = model_xgb3$bestTune$max_depth,
+  .eta = model_xgb2$bestTune$eta,
+  .gamma = c(0, 0.05, 0.01, 0.5, 0.7 ,0.9, 1),
+  .colsample_bytree = model_xgb4$bestTune$colsample_bytree,
+  .min_child_weight = model_xgb3$bestTune$min_child_weight,
+  .subsample = model_xgb4$bestTune$subsample
+))
+
+model_xgb5 <- train(SalePrice ~ . , data = train_dummy,
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "xgbTree",
+                    tuneGrid = xgb_grid5,
+                    trControl = ctrl)
+
+model_xgb5
+testRMSLES(test_dummy,model_xgb5)
+
+## Tuneo 6 0.156
+
+xgb_grid6 <- data.frame(expand.grid(
+  .nrounds = seq(200, nrounds_max, by = 50),
+  .max_depth = model_xgb3$bestTune$max_depth,
+  .eta = c(0.01, 0.015, 0.025, 0.05, 0.01),
+  .gamma = model_xgb5$bestTune$gamma,
+  .colsample_bytree = model_xgb4$bestTune$colsample_bytree,
+  .min_child_weight = model_xgb3$bestTune$min_child_weight,
+  .subsample = model_xgb4$bestTune$subsample
+))
+
+model_xgb6 <- train(SalePrice ~ . , data = train_dummy,
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "xgbTree",
+                    tuneGrid = xgb_grid6,
+                    trControl = ctrl)
+
+model_xgb6
+testRMSLES(test_dummy,model_xgb6)
+
 
