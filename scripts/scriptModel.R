@@ -5,11 +5,11 @@
 library(tidyverse)
 library(caret)
 library(magrittr)
-library(mice)
-library(foreach)
-library(doMC)
-library(MLmetrics)
-library(doSNOW)
+##library(mice)
+##library(foreach)
+##library(doMC)
+##library(MLmetrics)
+##library(doSNOW)
 set.seed(2345)
 
 ## functions-------
@@ -125,12 +125,12 @@ model_rpart <- train(SalePrice ~ ., data = train[-1],
                       metric = "RMSLE",
                       maximize = F,
                       method = "rpart",
-                      tuneLength = 10,
+                      tuneLength = 100,
                       trControl = ctrl,
                       preProcess = pr)
 model_rpart
 testRMSLES(test, model_rpart)
-
+saveRDS(model_rpart,"modelos/model_rpart.rds")
 ## Arbol de reglas, 0.17277
 
 registerDoMC(cores = 1) ## Desactivar para modelos basados en RWeka
@@ -145,27 +145,64 @@ model_m5
 testRMSLES(test, model_m5)
 
 
-## GBM  0.1518
+## GBM  0.1518--------------------------------------
 
 
-
-gbmGrid <- expand.grid(.interaction.depth = seq(1, 7, by = 2),
+## Tuneo 1
+gbmGrid1 <- expand.grid(.interaction.depth = 3,
                        .n.trees = seq(100, 1000, by = 50),
-                       .shrinkage = c(0.01, 0.1),
-                       .n.minobsinnode = c(10, 20) )
+                       .shrinkage =  0.1,
+                       .n.minobsinnode = 10 )
 
-model_gbm <- train(SalePrice ~ ., data = train[-1],
+model_gbm1 <- train(SalePrice ~ ., data = train[-1],
                    metric = "RMSLE",
                    maximize = F,
                    method = "gbm",
-                   tuneGrid = gbmGrid,
+                   tuneGrid = gbmGrid1,
                    trControl = ctrl)
-model_gbm
-testRMSLES(test, model_gbm)
+model_gbm1
+model_gbm1$bestTune
+testRMSLES(test, model_gbm1)
 
+## Tuneo 2 
 
-##XGBoost
+gbmGrid2 <- expand.grid(.interaction.depth = 3,
+                        .n.trees = model_gbm1$bestTune$n.trees,
+                        .shrinkage =  c(0.001, 0.01, 0.025, 0.03, 0.07, 0.1),
+                        .n.minobsinnode = 10)
 
+model_gbm2 <- train(SalePrice ~ ., data = train[-1],
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "gbm",
+                    tuneGrid = gbmGrid2,
+                    trControl = ctrl)
+model_gbm2
+model_gbm2$bestTune
+testRMSLES(test, model_gbm2)
+plot(model_gbm2)
+
+## Tuneo 3
+
+gbmGrid3 <- expand.grid(.interaction.depth = seq(3, 8, by = 1),
+                        .n.trees = model_gbm1$bestTune$n.trees,
+                        .shrinkage =  model_gbm2$bestTune$shrinkage,
+                        .n.minobsinnode = c(5, 10, 15))
+
+model_gbm3 <- train(SalePrice ~ ., data = train[-1],
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "gbm",
+                    tuneGrid = gbmGrid3,
+                    trControl = ctrl)
+model_gbm3
+model_gbm3$bestTune
+testRMSLES(test, model_gbm3)
+
+saveRDS(model_gbm3, "modelos/model_gbm_tuned.rds")
+##XGBoost---------------------------------------
+
+## Esta data no tiene rango completo, no sirve para modelos lineales
 data_dummy <- dummyVars(SalePrice ~ . , data = data)
 data_dummy_pred <- predict(data_dummy, data)
 data_dummy_pred <- cbind(as.data.frame(data_dummy_pred)[-1],data$SalePrice)
@@ -224,7 +261,7 @@ model_xgb2
 
 testRMSLES(test_dummy, model_xgb2)
 
-## Funcion para graficar el perfil del tuneo. De parte de Jani@Kaggle
+
 
 model_xgb2$bestTune # eta 0.05 max_depth 2
 
@@ -318,4 +355,5 @@ model_xgb6 <- train(SalePrice ~ . , data = train_dummy,
 model_xgb6
 testRMSLES(test_dummy,model_xgb6)
 
+saveRDS(model_xgb6, "modelos/model_xgb6_tuned.rds")
 
