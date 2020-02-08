@@ -64,6 +64,7 @@ mypostResample <- function(pred,obs){
 ## Fución para evaluar rápidamente la predicción del modelo
 testRMSLES <- function(dataTest, model) {
   df <- data.frame(obs = dataTest$SalePrice, pred = predict(model, dataTest))
+  names(df) <- c("obs", "pred")
   print(plot(df))
   abline(a=0, b=1)
   RMSLESummary(df)
@@ -119,8 +120,7 @@ abline(a=0,b=1)
 RMSLESummary(modelo)
 
 
-##  CART (Posiblemente no converge) 0.245721
-
+##  CART (Posiblemente no converge) 0.2063495
 model_rpart <- train(SalePrice ~ ., data = train[-1],
                       metric = "RMSLE",
                       maximize = F,
@@ -356,4 +356,65 @@ model_xgb6
 testRMSLES(test_dummy,model_xgb6)
 
 saveRDS(model_xgb6, "modelos/model_xgb6_tuned.rds")
+
+
+
+## Bagged tree 0.20331
+
+
+model_bag <- train(SalePrice ~ ., data = train[-1],
+                  metric = "RMSLE",
+                  maximize = F,
+                  method = "treebag",
+                  tuneLength = 10,
+                  trControl = ctrl,
+                  preProcess = pr)
+model_bag
+testRMSLES(test, model_bag)
+
+
+## random .162041
+
+model_rf <- train(SalePrice ~ ., data = train[-1],
+                   metric = "RMSLE",
+                   maximize = F,
+                   method = "rf",
+                   tuneLength = 10,
+                   trControl = ctrl,
+                   preProcess = pr)
+model_rf
+testRMSLES(test, model_rf)
+saveRDS(model_rf, "modelos/model_rf.rds")
+
+
+## Cubist  0.1720
+
+model_cubist <- train(SalePrice ~ ., data = train[-1],
+                      metric = "RMSLE",
+                      maximize = F,
+                      method = "cubist",
+                      tuneLength = 20,
+                      trControl = ctrl,
+                      preProcess = pr)
+
+model_cubist
+testRMSLES(test, model_cubist)
+saveRDS(model_cubist, "modelos/model_cubist.rds")
+
+
+# MARS 0.1917
+
+MARSGrid1 <- expand.grid(.degree = c(1,2,3,4),
+              .nprune= 2:38) 
+
+model_MARS <- train(SalePrice ~ ., data = train[-1],
+                    metric = "RMSLE",
+                    maximize = F,
+                    method = "earth",
+                    tuneGrid = MARSGrid1,
+                    trControl = ctrl,
+                    preProcess = pr)
+model_MARS
+testRMSLES(test, model_MARS)
+saveRDS(model_MARS, "modelos/model_MARS.rds")
 
